@@ -21,7 +21,7 @@ Here are some basic screenshots of this IDA Python script functionality:
 
 ![Guessed function names:](https://user-images.githubusercontent.com/2945834/49219813-b760f080-f3d4-11e8-9190-c948c8f82ea7.png)
 ![Source code tree:](https://user-images.githubusercontent.com/2945834/49219945-132b7980-f3d5-11e8-887e-5d749f6ef90e.png)
-
+![Renaming some unnamed functions based on its filename:](https://user-images.githubusercontent.com/2945834/49220101-88974a00-f3d5-11e8-86aa-09bfb69379ea.png)
 
 ## License
 
