@@ -11,7 +11,7 @@ An IDA Python plugin to extract information from string constants. The current v
 
 When the Python script is executed from within IDA it builds a list of ASCII and Unicode strings found by IDA and then applies a series of regular expressions to extract source code filenames, directories and candidate function names. Then, it shows 3 tabs with information:
 
- * Candidate function names: The function names guessed from the referenced string constants. Some basic and rudimentary false positive detection is implemented and the data available in the column "FP?" ("False Positive?").
+ * Candidate function names: The function names guessed from the referenced string constants. Some basic and rudimentary false positive detection is implemented and this data is available in the column "FP?" ("False Positive?").
  * Source code tree: Just a tree widget showing file names and, inside each one, the functions or references to the source file.
  * Source code files: A list (or chooser in the IDA's language) with source code filenames to function addresses and names.
 
