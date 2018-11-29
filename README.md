@@ -25,4 +25,4 @@ Here are some basic screenshots of this IDA Python script functionality:
 
 ## License
 
-The plugin is licensed under the GNU GPL v3.
+The plugin is licensed under the GNU GPL v3 license.
