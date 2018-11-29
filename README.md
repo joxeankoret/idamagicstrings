@@ -15,6 +15,10 @@ When the Python script is executed from within IDA it builds a list of ASCII and
  * Source code tree: Just a tree widget showing file names and, inside each one, the functions or references to the source file.
  * Source code files: A list (or chooser in the IDA's language) with source code filenames to function addresses and names.
 
+## Screenshots
+
+Here are some basic screenshots of this IDA Python script functionality:
+
 ## License
 
 The plugin is licensed under the GNU GPL v3.
