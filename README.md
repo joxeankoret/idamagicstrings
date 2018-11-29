@@ -19,6 +19,10 @@ When the Python script is executed from within IDA it builds a list of ASCII and
 
 Here are some basic screenshots of this IDA Python script functionality:
 
+![Guessed function names:](https://user-images.githubusercontent.com/2945834/49219813-b760f080-f3d4-11e8-9190-c948c8f82ea7.png)
+![Source code tree:](https://user-images.githubusercontent.com/2945834/49219945-132b7980-f3d5-11e8-887e-5d749f6ef90e.png)
+
+
 ## License
 
 The plugin is licensed under the GNU GPL v3.
