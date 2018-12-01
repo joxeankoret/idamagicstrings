@@ -19,6 +19,11 @@ from idautils import Strings
 from idaapi import PluginForm, Choose2
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+try:
+  long        # Python 2
+except NameError:
+  long = int  # Python 3
+
 #-------------------------------------------------------------------------------
 PROGRAM_NAME = "IDAMagicStrings"
 
