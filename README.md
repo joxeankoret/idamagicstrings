@@ -1,6 +1,6 @@
 # IDAMagicStrings
 
-An IDA Python plugin to extract information from string constants. The current version of the plugin is able to:
+An __[IDA](https://www.hex-rays.com) Python plugin__ to extract information from string constants. The current version of the plugin is able to:
 
  * Display functions to source files relationships (in a tree and in a plain list, a chooser in IDA language).
  * Display guessed function names for functions.
