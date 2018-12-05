@@ -14,6 +14,8 @@ from __future__ import print_function
 import os
 import re
 
+from collections import Counter
+
 import idaapi
 import idautils
 
@@ -93,7 +95,7 @@ def get_source_strings(min_len = 4, strtypes = [0, 1]):
   strings = Strings()
   strings.setup(strtypes = strtypes)
 
-  src_langs = {}
+  src_langs = Counter()
   total_files = 0
   d = {}
   for s in strings:
@@ -109,10 +111,7 @@ def get_source_strings(min_len = 4, strtypes = [0, 1]):
           file_ext = file_ext.strip(".")
           for key in LANGS:
             if file_ext in LANGS[key]:
-              try:
-                src_langs[key] += 1
-              except KeyError:
-                src_langs[key] = 1
+              src_langs[key] += 1
 
           for ref in refs:
             d[full_path].append([ref, GetFunctionName(ref), str(s)])
