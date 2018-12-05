@@ -1,13 +1,15 @@
 #-------------------------------------------------------------------------------
 #
-# IDAPython script to show many features extracted from debugging strings.
-# It's also able to rename functions based on the guessed function name & rename
+# IDAPython script to show many features extracted from debugging strings. It's
+# also able to rename functions based on the guessed function name & rename
 # functions based on the source code file they belong to.
 #
 # Copyright (c) 2018, Joxean Koret
 # Licensed under the GNU GPL v3.
 #
 #-------------------------------------------------------------------------------
+
+from __future__ import print_function
 
 import re
 
@@ -17,6 +19,15 @@ import idautils
 from idautils import Strings
 from idaapi import PluginForm, Choose2
 from PyQt5 import QtCore, QtGui, QtWidgets
+
+try:
+  import nltk
+  from nltk.tokenize import word_tokenize
+  from nltk.tag import pos_tag
+
+  has_nltk = True
+except ImportError:
+  has_nltk = False
 
 #-------------------------------------------------------------------------------
 PROGRAM_NAME = "IDAMagicStrings"
@@ -44,8 +55,32 @@ NOT_FUNCTION_NAMES = ["copyright", "char", "bool", "int", "unsigned", "long",
   "deleting", "removing", "updating", "adding", "assertion", "flags",
   "overflow", "enabled", "disabled", "enable", "disable", "virtual", "client",
   "server", "switch", "while", "offset", "abort", "panic", "static", "updated",
-  "month", "year", "week", "hour", "minute", "second",
+  "pointer", "reason", "month", "year", "week", "hour", "minute", "second", 
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+  'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
+  'september', 'october', 'november', 'december', "arguments", "corrupt", 
+  "corrupted", "default", "success", "expecting", "missing", "phrase", 
+  "unrecognized", "undefined",
   ]
+
+#-------------------------------------------------------------------------------
+FOUND_TOKENS = {}
+TOKEN_TYPES = ["NN", "NNS", "NNP", "JJ", "VB", "VBD", "VBG", "VBN", "VBP", "VBZ"]
+def nltk_preprocess(strings):
+  if not has_nltk:
+    return
+
+  strings = "\n".join(map(str, list(strings)))
+  tokens = re.findall(FUNCTION_NAMES_REGEXP, strings)
+  l = []
+  for token in tokens:
+    l.append(token[0])
+  word_tags = nltk.pos_tag(l)
+  for word, tag in word_tags:
+    try:
+      FOUND_TOKENS[word.lower()].add(tag)
+    except:
+      FOUND_TOKENS[word.lower()] = set([tag])
 
 #-------------------------------------------------------------------------------
 def get_source_strings(min_len = 4, strtypes = [0, 1]):
@@ -76,6 +111,7 @@ def get_source_strings(min_len = 4, strtypes = [0, 1]):
           for ref in refs:
             d[full_path].append([ref, GetFunctionName(ref), str(s)])
 
+  nltk_preprocess(strings)
   if len(d) > 0:
     print("Programming languages found:\n")
     for key in src_langs:
@@ -337,7 +373,7 @@ class CCandidateFunctionNames(Choose2):
     bin_func  = item[2]
     candidate = item[3]
     if self.looks_false(bin_func, candidate):
-      return [0x0000FF, 0]
+      return [0x026AFD, 0]
     return [0xFFFFFF, 0]
 
 #-------------------------------------------------------------------------------
@@ -371,6 +407,19 @@ def show_function_names(strings_list):
             found = True
             key = func.startEA
 
+            if has_nltk:
+              if candidate not in FOUND_TOKENS:
+                continue
+              
+              found = False
+              for tkn_type in TOKEN_TYPES:
+                if tkn_type in FOUND_TOKENS[candidate]:
+                  found = True
+                  break
+
+              if not found:
+                continue
+
             try:
               rarity[candidate].add(key)
             except KeyError:
@@ -380,7 +429,7 @@ def show_function_names(strings_list):
               func_names[key].add(candidate)
             except KeyError:
               func_names[key] = set([candidate])
-            
+
             try:
               raw_func_strings[key].add(str(s))
             except:
