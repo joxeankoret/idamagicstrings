@@ -11,6 +11,7 @@
 
 from __future__ import print_function
 
+import os
 import re
 
 import idaapi
@@ -28,6 +29,11 @@ try:
   has_nltk = True
 except ImportError:
   has_nltk = False
+
+try:
+  long        # Python 2
+except NameError:
+  long = int  # Python 3
 
 #-------------------------------------------------------------------------------
 PROGRAM_NAME = "IDAMagicStrings"
