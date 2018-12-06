@@ -12,7 +12,7 @@ An __[IDA](https://www.hex-rays.com) Python plugin__ to extract information from
 When the Python script is executed from within IDA it builds a list of ASCII and Unicode strings found by IDA and then applies a series of regular expressions to extract source code filenames, directories and candidate function names. Then, it shows 3 tabs with information:
 
  * Candidate function names: The function names guessed from the referenced string constants. Some basic and rudimentary false positive detection is implemented and this data is available in the column "FP?" ("False Positive?").
-   * If available, it uses [NLTK](https://www.nltk.org/) to detect the appropriate word that can be function name candidates (i.e., nouns, verbs and names).
+   * If available, it uses [NLTK](https://www.nltk.org/) to detect the appropriate words that can be function name candidates (i.e., nouns, verbs and names).
  * Source code tree: Just a tree widget showing file names and, inside each one, the functions or references to the source file.
  * Source code files: A list (or chooser in the IDA's language) with source code filenames to function addresses and names.
 
