@@ -368,6 +368,8 @@ class CCandidateFunctionNames(Choose2):
     self.selected_items = sel_list
 
   def looks_false(self, bin_func, candidate):
+    bin_func  = bin_func.lower()
+    candidate = candidate.lower()
     if not bin_func.startswith("sub_"):
       if bin_func.find(candidate) == -1 and candidate.find(bin_func) == -1:
         return True
