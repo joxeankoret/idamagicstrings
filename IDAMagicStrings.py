@@ -4,7 +4,7 @@
 # also able to rename functions based on the guessed function name & rename
 # functions based on the source code file they belong to.
 #
-# Copyright (c) 2018, Joxean Koret
+# Copyright (c) 2018-2019, Joxean Koret
 # Licensed under the GNU GPL v3.
 #
 #-------------------------------------------------------------------------------
@@ -54,6 +54,7 @@ LANGS["OCaml"] = ["ml"]
 
 #-------------------------------------------------------------------------------
 FUNCTION_NAMES_REGEXP = r"([a-z_][a-z0-9_]+((::)+[a-z_][a-z0-9_]+)*)"
+CLASS_NAMES_REGEXP    = r"([a-z_][a-z0-9_]+(::[a-z0-9_<>]+)+)"
 NOT_FUNCTION_NAMES = ["copyright", "char", "bool", "int", "unsigned", "long",
   "double", "float", "signed", "license", "version", "cannot", "error",
   "invalid", "null", "warning", "general", "argument", "written", "report",
@@ -384,6 +385,76 @@ class CCandidateFunctionNames(Choose2):
     return [0xFFFFFF, 0]
 
 #-------------------------------------------------------------------------------
+class CClassXRefsChooser(idaapi.Choose2):
+  def __init__(self, title, items):
+    idaapi.Choose2.__init__(self,
+                     title,
+                     [ ["Address", 8], ["String", 80] ])
+    self.items = items
+
+  def OnGetLine(self, n):
+    return self.items[n]
+
+  def OnGetSize(self):
+    return len(self.items)
+
+#-------------------------------------------------------------------------------
+class CClassesGraph(idaapi.GraphViewer):
+  def __init__(self, title, classes):
+    idaapi.GraphViewer.__init__(self, title)
+    self.classes = classes
+    self.nodes = {}
+    self.nodes_ea = {}
+
+  def OnRefresh(self):
+    self.Clear()
+    for ea, tokens in self.classes:
+      for node_name in tokens:
+        full_name = "::".join(tokens[:tokens.index(node_name)+1])
+        if full_name not in self.nodes:
+          node_id = self.AddNode(node_name)
+          self.nodes[full_name] = node_id
+        else:
+          node_id = self.nodes[full_name]
+
+        try:
+          self.nodes_ea[node_id].add(ea)
+        except KeyError:
+          self.nodes_ea[node_id] = set([ea])
+
+        parent_name = "::".join(tokens[:tokens.index(node_name)])
+        if parent_name != "" and parent_name in self.nodes:
+          parent_id = self.nodes[parent_name]
+          self.AddEdge(parent_id, node_id)
+
+    return True
+
+  def OnGetText(self, node_id):
+    return str(self[node_id])
+
+  def OnDblClick(self, node_id):
+    eas = self.nodes_ea[node_id]
+    if len(eas) == 1:
+      jumpto(list(eas)[0])
+    else:
+      items = []
+      for ea in eas:
+        s = GetString(ea)
+        if s.find(str(self[node_id])) == -1:
+          s = GetString(ea, strtype=1)
+        items.append(["0x%08x" % ea, repr(s)])
+
+      chooser = CClassXRefsChooser("XRefs to %s" % str(self[node_id]), items)
+      idx = chooser.Show(1)
+      if idx > -1:
+        jumpto(list(eas)[idx])
+
+  def Show(self):
+    if not idaapi.GraphViewer.Show(self):
+      return False
+    return True
+
+#-------------------------------------------------------------------------------
 def show_tree(d = None):
   tree_frm = CBaseTreeViewer()
   tree_frm.Show(PROGRAM_NAME + ": Source code tree", d)
@@ -396,11 +467,23 @@ def seems_function_name(candidate):
   return False
 
 #-------------------------------------------------------------------------------
-def show_function_names(strings_list):
+def find_function_names(strings_list):
   rarity = {}
   func_names = {}
   raw_func_strings = {}
+  class_objects = []
   for s in strings_list:
+    # Find class members
+    class_ret = re.findall(CLASS_NAMES_REGEXP, str(s), re.IGNORECASE)
+    if len(class_ret) > 0:
+      for element in class_ret:
+        candidate = element[0]
+        if candidate.find("::") > 0:
+          tokens = candidate.split("::")
+          if tokens not in class_objects:
+            class_objects.append([s.ea, tokens])
+
+    # Find just function names
     ret = re.findall(FUNCTION_NAMES_REGEXP, str(s), re.IGNORECASE)
     if len(ret) > 0:
       candidate = ret[0][0]
@@ -442,6 +525,13 @@ def show_function_names(strings_list):
             except:
               raw_func_strings[key] = set([str(s)])
 
+  return func_names, raw_func_strings, rarity, class_objects
+
+#-------------------------------------------------------------------------------
+def show_function_names(strings_list):
+  l = find_function_names(strings_list)
+  func_names, raw_func_strings, rarity, classes = l
+
   final_list = []
   for key in func_names:
     candidates = set()
@@ -461,6 +551,10 @@ def show_function_names(strings_list):
 
   cfn = CCandidateFunctionNames(PROGRAM_NAME + ": Candidate Function Names", final_list)
   cfn.show()
+
+  if len(classes) > 0:
+    class_graph = CClassesGraph(PROGRAM_NAME + ": Classes Hierarchy", classes)
+    class_graph.Show()
 
 #-------------------------------------------------------------------------------
 def main():
