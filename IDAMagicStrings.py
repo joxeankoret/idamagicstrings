@@ -405,15 +405,18 @@ class CClassesGraph(idaapi.GraphViewer):
     self.classes = classes
     self.nodes = {}
     self.nodes_ea = {}
+    self.graph = {}
 
   def OnRefresh(self):
     self.Clear()
+    self.graph = {}
     for ea, tokens in self.classes:
       for node_name in tokens:
         full_name = "::".join(tokens[:tokens.index(node_name)+1])
         if full_name not in self.nodes:
           node_id = self.AddNode(node_name)
           self.nodes[full_name] = node_id
+          self.graph[node_id] = []
         else:
           node_id = self.nodes[full_name]
 
@@ -426,6 +429,7 @@ class CClassesGraph(idaapi.GraphViewer):
         if parent_name != "" and parent_name in self.nodes:
           parent_id = self.nodes[parent_name]
           self.AddEdge(parent_id, node_id)
+          self.graph[parent_id].append(node_id)
 
     return True
 
@@ -439,9 +443,16 @@ class CClassesGraph(idaapi.GraphViewer):
     else:
       items = []
       for ea in eas:
-        s = GetString(ea)
-        if s.find(str(self[node_id])) == -1:
-          s = GetString(ea, strtype=1)
+        func = idaapi.get_func(ea)
+        if func is None:
+          s = GetString(ea)
+          if s is not None and s.find(str(self[node_id])) == -1:
+            s = GetString(ea, strtype=1)
+          else:
+            s = GetDisasm(ea)
+        else:
+          s = GetFunctionName(func.startEA)
+
         items.append(["0x%08x" % ea, repr(s)])
 
       chooser = CClassXRefsChooser("XRefs to %s" % str(self[node_id]), items)
@@ -449,9 +460,32 @@ class CClassesGraph(idaapi.GraphViewer):
       if idx > -1:
         jumpto(list(eas)[idx])
 
+  def OnCommand(self, cmd_id):
+    if self.cmd_dot == cmd_id:
+      fname = idc.AskFile(1, "*.dot", "Dot file name")
+      if fname:
+        f = open(fname, "wb")
+        buf = 'digraph G {\n graph [overlap=scale]; node [fontname=Courier]; \n\n'
+        for n in self.graph:
+          name = str(self[n])
+          buf += ' a%s [shape=box, label = "%s", color="blue"]\n' % (n, name)
+        buf += '\n'
+
+        for node_id in self.graph:
+          for child_id in self.graph[node_id]:
+            buf += " a%s -> a%s [style = bold]\n" % (node_id, child_id)
+
+        buf += '\n'
+        buf += '}'
+        f.write(buf)
+        f.close()
+
   def Show(self):
     if not idaapi.GraphViewer.Show(self):
       return False
+    self.cmd_dot = self.AddCommand("Export to Graphviz", "F2")
+    if self.cmd_dot == 0:
+      print("Failed to add popup menu item!")
     return True
 
 #-------------------------------------------------------------------------------
@@ -467,12 +501,42 @@ def seems_function_name(candidate):
   return False
 
 #-------------------------------------------------------------------------------
+class CFakeString:
+  def __init__(self, ea, s):
+    self.ea = ea
+    self.s = s
+
+  def __str__(self):
+    return str(self.s)
+
+  def __repr__(self):
+    return self.__str__()
+  
+#-------------------------------------------------------------------------------
 def find_function_names(strings_list):
   rarity = {}
   func_names = {}
   raw_func_strings = {}
   class_objects = []
-  for s in strings_list:
+
+  class_tmp_names = []
+  for ea, name in Names():
+    func = idaapi.get_func(ea)
+    if func is None:
+      continue
+
+    true_name = name
+    if name.find("::") == -1:
+      name = Demangle(name, INF_SHORT_DN)
+      if name is not None and name != "" and name.find("::") > -1:
+        true_name = name
+
+    if true_name.find("::") > -1:
+      s = CFakeString(ea, true_name)
+      class_tmp_names.append(s)
+
+  class_tmp_names.extend(strings_list)
+  for s in class_tmp_names:
     # Find class members
     class_ret = re.findall(CLASS_NAMES_REGEXP, str(s), re.IGNORECASE)
     if len(class_ret) > 0:
