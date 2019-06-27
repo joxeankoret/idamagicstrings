@@ -54,7 +54,7 @@ LANGS["OCaml"] = ["ml"]
 
 #-------------------------------------------------------------------------------
 FUNCTION_NAMES_REGEXP = r"([a-z_][a-z0-9_]+((::)+[a-z_][a-z0-9_]+)*)"
-CLASS_NAMES_REGEXP    = r"([a-z_][a-z0-9_]+(::(<[a-z0-9_]+>|~{0,1}[a-z0-9_]+))+)\("
+CLASS_NAMES_REGEXP    = r"([a-z_][a-z0-9_]+(::(<[a-z0-9_]+>|~{0,1}[a-z0-9_]+))+)\({0,1}"
 NOT_FUNCTION_NAMES = ["copyright", "char", "bool", "int", "unsigned", "long",
   "double", "float", "signed", "license", "version", "cannot", "error",
   "invalid", "null", "warning", "general", "argument", "written", "report",
@@ -424,6 +424,7 @@ class CClassesTreeViewer(PluginForm):
     self.tree.clear()
     self.nodes = {}
 
+    self.classes = sorted(self.classes, key=lambda x: x[1][0])
     for ea, tokens in self.classes:
       for i, node_name in enumerate(tokens):
         full_name = "::".join(tokens[:tokens.index(node_name)+1])
