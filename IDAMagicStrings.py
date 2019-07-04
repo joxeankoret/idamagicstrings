@@ -560,12 +560,40 @@ class CClassesGraph(idaapi.GraphViewer):
           buf += ' a%s [shape=box, label = "%s", color="blue"]\n' % (n, name)
         buf += '\n'
 
+        dones = set()
         for node_id in self.graph:
           for child_id in self.graph[node_id]:
+            s = str([node_id, child_id])
+            if s in dones:
+              continue
+            dones.add(s)
             buf += " a%s -> a%s [style = bold]\n" % (node_id, child_id)
 
         buf += '\n'
         buf += '}'
+        f.write(buf)
+        f.close()
+    elif self.cmd_gml == cmd_id:
+      fname = idc.AskFile(1, "*.gml", "GML file name")
+      if fname:
+        f = open(fname, "wb")
+        buf = 'graph [ \n'
+        for n in self.graph:
+          name = str(self[n])
+          buf += 'node [ id %s \n label "%s"\n fill "blue" \n type "oval"\n LabelGraphics [ type "text" ] ] \n' % (n, name)
+        buf += '\n'
+
+        dones = set()
+        for node_id in self.graph:
+          for child_id in self.graph[node_id]:
+            s = str([node_id, child_id])
+            if s in dones:
+              continue
+            dones.add(s)
+            buf += " edge [ source %s \n target %s ]\n" % (node_id, child_id)
+
+        buf += '\n'
+        buf += ']'
         f.write(buf)
         f.close()
 
@@ -573,6 +601,7 @@ class CClassesGraph(idaapi.GraphViewer):
     if not idaapi.GraphViewer.Show(self):
       return False
     self.cmd_dot = self.AddCommand("Export to Graphviz", "F2")
+    self.cmd_gml = self.AddCommand("Export to GML", "F3")
     return True
 
 #-------------------------------------------------------------------------------
