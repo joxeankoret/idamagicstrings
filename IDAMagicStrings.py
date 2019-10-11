@@ -17,10 +17,11 @@ import re
 from collections import Counter
 
 import idaapi
-import idautils
 
-from idautils import Strings
-from idaapi import PluginForm, Choose2
+from idc import *
+from idaapi import *
+from idautils import *
+
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 try:
@@ -31,11 +32,6 @@ try:
   has_nltk = True
 except ImportError:
   has_nltk = False
-
-try:
-  long        # Python 2
-except NameError:
-  long = int  # Python 3
 
 #-------------------------------------------------------------------------------
 PROGRAM_NAME = "IMS"
@@ -92,10 +88,39 @@ def nltk_preprocess(strings):
       FOUND_TOKENS[word.lower()] = set([tag])
 
 #-------------------------------------------------------------------------------
-def get_source_strings(min_len = 4, strtypes = [0, 1]):
+def get_strings(strtypes = [0, 1]):
   strings = Strings()
   strings.setup(strtypes = strtypes)
+  return strings
 
+#-------------------------------------------------------------------------------
+def get_lang(full_path):
+  _, file_ext  = os.path.splitext(full_path.lower())
+  file_ext = file_ext.strip(".")
+  for key in LANGS:
+    if file_ext in LANGS[key]:
+      return key
+  return None
+
+#-------------------------------------------------------------------------------
+def add_source_file_to(d, src_langs, refs, full_path, s):
+  if full_path not in d:
+    d[full_path] = []
+
+  lang = get_lang(full_path)
+  if lang is not None:
+    src_langs[lang] += 1
+
+  for ref in refs:
+    d[full_path].append([ref, get_func_name(ref), str(s)])
+
+  return d, src_langs
+
+#-------------------------------------------------------------------------------
+def get_source_strings(min_len = 4, strtypes = [0, 1]):
+  strings = get_strings(strtypes)
+
+  # Search string references to source files
   src_langs = Counter()
   total_files = 0
   d = {}
@@ -107,18 +132,26 @@ def get_source_strings(min_len = 4, strtypes = [0, 1]):
         if len(refs) > 0:
           total_files += 1
           full_path    = ret[0][0]
-          d[full_path] = []
-          _, file_ext  = os.path.splitext(full_path.lower())
-          file_ext = file_ext.strip(".")
-          for key in LANGS:
-            if file_ext in LANGS[key]:
-              src_langs[key] += 1
+          d, src_langs = add_source_file_to(d, src_langs, refs, full_path, s)
 
-          for ref in refs:
-            d[full_path].append([ref, GetFunctionName(ref), str(s)])
+  # Use the loaded debugging information (if any) to find source files
+  for f in list(Functions()):
+    done = False
+    func = idaapi.get_func(f)
+    if func is not None:
+      cfg = idaapi.FlowChart(func)
+      for block in cfg:
+        if done:
+          break
+
+        for head in list(Heads(block.start_ea, block.end_ea)):
+          full_path = get_sourcefile(head)
+          if full_path is not None:
+            total_files += 1
+            d, src_langs = add_source_file_to(d, src_langs, [head], full_path, "Symbol: %s" % full_path)
 
   nltk_preprocess(strings)
-  if len(d) > 0:
+  if len(d) > 0 and total_files > 0:
     print("Programming languages found:\n")
     for key in src_langs:
       print("  %s %f%%" % (key.ljust(10), src_langs[key] * 100. / total_files))
@@ -129,7 +162,7 @@ def get_source_strings(min_len = 4, strtypes = [0, 1]):
 #-------------------------------------------------------------------------------
 def handler(item, column_no):
   ea = item.ea
-  if isEnabled(ea):
+  if is_mapped(ea):
     jumpto(ea)
 
 #-------------------------------------------------------------------------------
@@ -174,7 +207,7 @@ class CBaseTreeViewer(PluginForm):
 
   def Show(self, title, d = None):
     self.d = d
-    return PluginForm.Show(self, title, options = PluginForm.FORM_PERSIST)
+    return PluginForm.Show(self, title, options = PluginForm.WOPN_PERSIST)
 
 #-------------------------------------------------------------------------------
 def basename(path):
@@ -188,10 +221,43 @@ def basename(path):
   return path[len(path)-pos:]
 
 #-------------------------------------------------------------------------------
-class CSourceFilesChooser(Choose2):
+class command_handler_t(ida_kernwin.action_handler_t):
+  def __init__(self, obj, cmd_id, num_args = 1):
+    self.obj = obj
+    self.cmd_id = cmd_id
+    self.num_args = num_args
+    ida_kernwin.action_handler_t.__init__(self)
+
+  def activate(self, ctx):
+    if self.num_args == 1:
+      return self.obj.OnCommand(self.cmd_id)
+    return self.obj.OnCommand(self.obj, self.cmd_id)
+
+  def update(self, ctx):
+    return idaapi.AST_ENABLE_ALWAYS
+
+#-------------------------------------------------------------------------------
+class CIDAMagicStringsChooser(Choose):
+  def __init__(self, title, columns, options):
+    Choose.__init__(self, title, columns, options)
+    self.actions = []
+
+  def AddCommand(self, menu_name, shortcut=None):
+    action_name = "IDAMagicStrings:%s" % menu_name.replace(" ", "")
+    self.actions.append([len(self.actions), action_name, menu_name, shortcut])
+    return len(self.actions)-1
+
+  def OnPopup(self, form, popup_handle):
+    for num, action_name, menu_name, shortcut in self.actions:
+      handler = command_handler_t(self, num, 2)
+      desc = ida_kernwin.action_desc_t(action_name, menu_name, handler, shortcut)
+      ida_kernwin.attach_dynamic_action_to_popup(form, popup_handle, desc)
+
+#-------------------------------------------------------------------------------
+class CSourceFilesChooser(CIDAMagicStringsChooser):
   def __init__(self, title):
     columns = [ ["Line", 4], ["Full path", 20], ["Filename", 15], ["EA", 16], ["Function Name", 18], ["String data", 40], ]
-    Choose2.__init__(self, title, columns, Choose2.CH_MULTI)
+    CIDAMagicStringsChooser.__init__(self, title, columns, Choose.CH_MULTI)
     self.n = 0
     self.icon = -1
     self.selcount = 0
@@ -200,7 +266,7 @@ class CSourceFilesChooser(Choose2):
     self.selected_items = []
 
     d, s = get_source_strings()
-    keys = d.keys()
+    keys = list(d.keys())
     keys.sort()
     
     i = 0
@@ -227,7 +293,7 @@ class CSourceFilesChooser(Choose2):
   def OnCommand(self, n, cmd_id):
     # Aditional right-click-menu commands handles
     if cmd_id == self.cmd_all:
-      l = range(len(self.items))
+      l = list(range(len(self.items)))
     elif cmd_id == self.cmd_all_sub:
       l = []
       for i, item in enumerate(self.items):
@@ -247,13 +313,13 @@ class CSourceFilesChooser(Choose2):
   def rename_items(self, items):
     for i in items:
       item = self.items[i]
-      ea = long(item[3], 16)
+      ea = int(item[3], 16)
       candidate, _ = os.path.splitext(item[2])
       name = "%s_%08x" % (candidate, ea)
       func = idaapi.get_func(ea)
       if func is not None:
-        ea = func.startEA
-        MakeName(ea, name)
+        ea = func.start_ea
+        set_name(ea, name, SN_CHECK)
       else:
         line = "WARNING: Cannot rename 0x%08x to %s because there is no function associated."
         print(line % (ea, name))
@@ -274,19 +340,19 @@ class CSourceFilesChooser(Choose2):
 
   def OnSelectLine(self, n):
     self.selcount += 1
-    row = self.items[n]
-    ea = long(row[3], 16)
-    if isEnabled(ea):
+    row = self.items[n[0]]
+    ea = int(row[3], 16)
+    if is_mapped(ea):
       jumpto(ea)
 
   def OnSelectionChange(self, sel_list):
     self.selected_items = sel_list
 
 #-------------------------------------------------------------------------------
-class CCandidateFunctionNames(Choose2):
+class CCandidateFunctionNames(CIDAMagicStringsChooser):
   def __init__(self, title, l):
     columns = [ ["Line", 4], ["EA", 16], ["Function Name", 25], ["Candidate", 25], ["FP?", 2], ["Strings", 50], ]
-    Choose2.__init__(self, title, columns, Choose2.CH_MULTI)
+    CIDAMagicStringsChooser.__init__(self, title, columns, Choose.CH_MULTI)
     self.n = 0
     self.icon = -1
     self.selcount = 0
@@ -318,7 +384,7 @@ class CCandidateFunctionNames(Choose2):
   def OnCommand(self, n, cmd_id):
     # Aditional right-click-menu commands handles
     if cmd_id == self.cmd_rename_all:
-      l = range(len(self.items))
+      l = list(range(len(self.items)))
     elif cmd_id == self.cmd_rename_selected:
       l = list(self.selected_items)
     elif cmd_id == self.cmd_rename_sub:
@@ -340,9 +406,9 @@ class CCandidateFunctionNames(Choose2):
   def rename_items(self, items):
     for i in items:
       item = self.items[i]
-      ea = long(item[1], 16)
+      ea = int(item[1], 16)
       candidate = item[3]
-      MakeName(ea, candidate)
+      set_name(ea, candidate, SN_CHECK)
 
   def OnGetLine(self, n):
     return self.items[n]
@@ -360,9 +426,9 @@ class CCandidateFunctionNames(Choose2):
 
   def OnSelectLine(self, n):
     self.selcount += 1
-    row = self.items[n]
-    ea = long(row[1], 16)
-    if isEnabled(ea):
+    row = self.items[n[0]]
+    ea = int(row[1], 16)
+    if is_mapped(ea):
       jumpto(ea)
 
   def OnSelectionChange(self, sel_list):
@@ -385,9 +451,9 @@ class CCandidateFunctionNames(Choose2):
     return [0xFFFFFF, 0]
 
 #-------------------------------------------------------------------------------
-class CClassXRefsChooser(idaapi.Choose2):
+class CClassXRefsChooser(idaapi.Choose):
   def __init__(self, title, items):
-    idaapi.Choose2.__init__(self,
+    idaapi.Choose.__init__(self,
                      title,
                      [ ["Address", 8], ["String", 80] ])
     self.items = items
@@ -400,21 +466,23 @@ class CClassXRefsChooser(idaapi.Choose2):
 
 #-------------------------------------------------------------------------------
 def get_string(ea):
-  tmp = GetString(ea)
+  tmp = idc.get_strlit_contents(ea, strtype=0)
   if tmp is None or len(tmp) == 1:
-    unicode_tmp = GetString(ea, strtype=1)
+    unicode_tmp = idc.get_strlit_contents(ea, strtype=1)
     if unicode_tmp is not None and len(unicode_tmp) > len(tmp):
       tmp = unicode_tmp
   
   if tmp is None:
     tmp = ""
+  elif type(tmp) != str:
+    tmp = tmp.decode("utf-8")
   return tmp
 
 #-------------------------------------------------------------------------------
 def classes_handler(item, column_no):
   if item.childCount() == 0:
     ea = item.ea
-    if isEnabled(ea):
+    if is_mapped(ea):
       jumpto(ea)
 
 #-------------------------------------------------------------------------------
@@ -433,7 +501,10 @@ class CClassesTreeViewer(PluginForm):
             parent = self.tree
           else:
             parent_name = "::".join(tokens[:tokens.index(node_name)])
-            parent = self.nodes[parent_name]
+            try:
+              parent = self.nodes[parent_name]
+            except:
+              print("Error adding node?", self.nodes, parent_name, str(sys.exc_info()[1]))
 
           node = QtWidgets.QTreeWidgetItem(parent)
           node.setText(0, full_name)
@@ -461,17 +532,20 @@ class CClassesTreeViewer(PluginForm):
 
   def Show(self, title, classes):
     self.classes = classes
-    return PluginForm.Show(self, title, options = PluginForm.FORM_PERSIST)
+    return PluginForm.Show(self, title, options = PluginForm.WOPN_PERSIST)
 
 #-------------------------------------------------------------------------------
 class CClassesGraph(idaapi.GraphViewer):
   def __init__(self, title, classes, final_list):
     idaapi.GraphViewer.__init__(self, title)
+    self.selected = None
     self.classes = classes
     self.final_list = final_list
     self.nodes = {}
     self.nodes_ea = {}
     self.graph = {}
+
+    self.last_cmd = 0
 
     dones = set()
     for ea, tokens in self.classes:
@@ -480,7 +554,7 @@ class CClassesGraph(idaapi.GraphViewer):
       for ref in refs:
         func = idaapi.get_func(ref)
         if func is not None:
-          refs_funcs.add(func.startEA)
+          refs_funcs.add(func.start_ea)
 
       if len(refs_funcs) == 1:
         func_ea = list(refs_funcs)[0]
@@ -488,8 +562,8 @@ class CClassesGraph(idaapi.GraphViewer):
           continue
         dones.add(func_ea)
 
-        func_name = GetFunctionName(func_ea)
-        tmp = Demangle(func_name, INF_SHORT_DN)
+        func_name = get_func_name(func_ea)
+        tmp = demangle_name(func_name, INF_SHORT_DN)
         if tmp is not None:
           func_name = tmp
 
@@ -534,13 +608,14 @@ class CClassesGraph(idaapi.GraphViewer):
       for ea in eas:
         func = idaapi.get_func(ea)
         if func is None:
-          s = GetString(ea)
+          s = get_strlit_contents(ea)
+          s = s.decode("utf-8")
           if s is not None and s.find(str(self[node_id])) == -1:
-            s = GetString(ea, strtype=1)
+            s = get_strlit_contents(ea, strtype=1)
           else:
             s = GetDisasm(ea)
         else:
-          s = GetFunctionName(func.startEA)
+          s = get_func_name(func.start_ea)
 
         items.append(["0x%08x" % ea, repr(s)])
 
@@ -551,9 +626,9 @@ class CClassesGraph(idaapi.GraphViewer):
 
   def OnCommand(self, cmd_id):
     if self.cmd_dot == cmd_id:
-      fname = idc.AskFile(1, "*.dot", "Dot file name")
+      fname = ask_file(1, "*.dot", "Dot file name")
       if fname:
-        f = open(fname, "wb")
+        f = open(fname, "w")
         buf = 'digraph G {\n graph [overlap=scale]; node [fontname=Courier]; \n\n'
         for n in self.graph:
           name = str(self[n])
@@ -574,9 +649,9 @@ class CClassesGraph(idaapi.GraphViewer):
         f.write(buf)
         f.close()
     elif self.cmd_gml == cmd_id:
-      fname = idc.AskFile(1, "*.gml", "GML file name")
+      fname = ask_file(1, "*.gml", "GML file name")
       if fname:
-        f = open(fname, "wb")
+        f = open(fname, "w")
         buf = 'graph [ \n'
         for n in self.graph:
           name = str(self[n])
@@ -597,11 +672,26 @@ class CClassesGraph(idaapi.GraphViewer):
         f.write(buf)
         f.close()
 
+  def OnPopup(self, form, popup_handle):
+    self.cmd_dot = 0
+    cmd_handler = command_handler_t(self, self.cmd_dot)
+    desc = ida_kernwin.action_desc_t("IDAMagicStrings:GraphvizExport", "Export to Graphviz",
+                                     cmd_handler, "F2")
+    ida_kernwin.attach_dynamic_action_to_popup(form, popup_handle, desc)
+
+    self.cmd_gml = 1
+    cmd_handler = command_handler_t(self, self.cmd_gml)
+    desc = ida_kernwin.action_desc_t("IDAMagicStrings:GmlExport","Export to GML",
+                                     cmd_handler, "F3")
+    ida_kernwin.attach_dynamic_action_to_popup(form, popup_handle, desc)
+
+  def OnClick(self, item):
+    self.selected = item
+    return True
+
   def Show(self):
     if not idaapi.GraphViewer.Show(self):
       return False
-    self.cmd_dot = self.AddCommand("Export to Graphviz", "F2")
-    self.cmd_gml = self.AddCommand("Export to GML", "F3")
     return True
 
 #-------------------------------------------------------------------------------
@@ -643,7 +733,7 @@ def find_function_names(strings_list):
 
     true_name = name
     if name.find("::") == -1:
-      name = Demangle(name, INF_SHORT_DN)
+      name = demangle_name(name, INF_SHORT_DN)
       if name is not None and name != "" and name.find("::") > -1:
         true_name = name
 
@@ -675,7 +765,7 @@ def find_function_names(strings_list):
           func = idaapi.get_func(ref)
           if func is not None:
             found = True
-            key = func.startEA
+            key = func.start_ea
 
             if has_nltk:
               if candidate not in FOUND_TOKENS:
@@ -721,10 +811,10 @@ def show_function_names(strings_list):
 
     if len(candidates) == 1:
       raw_strings = list(raw_func_strings[key])
-      raw_strings = map(repr, raw_strings)
+      raw_strings = list(map(repr, raw_strings))
       
-      func_name = GetFunctionName(key)
-      tmp = Demangle(func_name, INF_SHORT_DN)
+      func_name = get_func_name(key)
+      tmp = demangle_name(func_name, INF_SHORT_DN)
       if tmp is not None:
         func_name = tmp
       final_list.append([key, func_name, list(candidates)[0], raw_strings])
