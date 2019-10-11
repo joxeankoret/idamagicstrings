@@ -5,7 +5,7 @@
 # functions based on the source code file they belong to.
 #
 # Copyright (c) 2018-2019, Joxean Koret
-# Licensed under the GNU GPL v3.
+# Licensed under the GNU Affero General Public License v3.
 #
 #-------------------------------------------------------------------------------
 
