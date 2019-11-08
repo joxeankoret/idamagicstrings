@@ -297,7 +297,7 @@ class CSourceFilesChooser(CIDAMagicStringsChooser):
     elif cmd_id == self.cmd_all_sub:
       l = []
       for i, item in enumerate(self.items):
-        if item[4].startswith("sub_"):
+        if item[4] is not None and item[4].startswith("sub_"):
           l.append(i)
     elif cmd_id == self.cmd_selected:
       l = list(self.selected_items)
