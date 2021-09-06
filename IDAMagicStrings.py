@@ -350,7 +350,7 @@ class CSourceFilesChooser(CIDAMagicStringsChooser):
 
 #-------------------------------------------------------------------------------
 class CCandidateFunctionNames(CIDAMagicStringsChooser):
-  def __init__(self, title, l):
+  def __init__(self, title, final_list):
     columns = [ ["Line", 4], ["EA", 16], ["Function Name", 25], ["Candidate", 25], ["FP?", 2], ["Strings", 50], ]
     CIDAMagicStringsChooser.__init__(self, title, columns, Choose.CH_MULTI)
     self.n = 0
@@ -360,14 +360,14 @@ class CCandidateFunctionNames(CIDAMagicStringsChooser):
     self.items = []
     self.selected_items = []
 
-    i = 0
-    for item in l:
+    idx = 0
+    for item in final_list:
       bin_func  = item[1]
       candidate = item[2]
       seems_false = str(int(self.looks_false(bin_func, candidate)))
-      line = ["%03d" % i, "0x%08x" % item[0], item[1], item[2], seems_false, ", ".join(item[3]) ]
+      line = ["%03d" % idx, "0x%08x" % item[0], item[1], item[2], seems_false, ", ".join(item[3]) ]
       self.items.append(line)
-      i += 1
+      idx += 1
 
     self.items = sorted(self.items, key=lambda x: x[4])
 
@@ -409,6 +409,7 @@ class CCandidateFunctionNames(CIDAMagicStringsChooser):
       ea = int(item[1], 16)
       candidate = item[3]
       set_name(ea, candidate, SN_CHECK)
+      print(f'[idamagic] rename {item} to {candidate}')
 
   def OnGetLine(self, n):
     return self.items[n]
@@ -800,23 +801,28 @@ def find_function_names(strings_list):
 #-------------------------------------------------------------------------------
 def show_function_names(strings_list):
   l = find_function_names(strings_list)
+  print(f'[idamagic] l : {type(l)} {len(l)}')
   func_names, raw_func_strings, rarity, classes = l
-
+  # print(f'[idamagic] {func_names}, {raw_func_strings}, {rarity}, {classes}')
+  # [print(k) for k in l]
   final_list = []
   for key in func_names:
     candidates = set()
     for candidate in func_names[key]:
       if len(rarity[candidate]) == 1:
         candidates.add(candidate)
-
+   # print(f'[idamagic] key: {key} cand: {len(candidates)}')
     if len(candidates) == 1:
       raw_strings = list(raw_func_strings[key])
       raw_strings = list(map(repr, raw_strings))
       
       func_name = get_func_name(key)
+      #print(f'[idamagic] key: {key} f:{func_name}')
       tmp = demangle_name(func_name, INF_SHORT_DN)
       if tmp is not None:
         func_name = tmp
+      func_name = func_name.replace('::', '_')
+      print(f'[idamagic] final_list l:{len(final_list)} adding: {func_name} cand: {list(candidates)[0]} rawstr: {raw_strings}')
       final_list.append([key, func_name, list(candidates)[0], raw_strings])
 
   if len(classes) > 0:
@@ -833,6 +839,33 @@ def show_function_names(strings_list):
     cfn.show()
 
 #-------------------------------------------------------------------------------
+
+class magicstrings(idaapi.plugin_t):
+    flags = idaapi.PLUGIN_UNL
+    comment = "This is a comment"
+
+    help = "This is help"
+    wanted_name = "magicstrings"
+    wanted_hotkey = ""
+
+    def init(self):
+        #idaapi.msg("StructTyper init() called!\n")
+        return idaapi.PLUGIN_OK
+
+    def run(self, arg):
+        #idaapi.msg("StructTyper run() called with %d!\n" % arg)
+        main()
+        #flare.struct_typer.main()
+
+    def term(self):
+        #idaapi.msg("StructTyper term() called!\n")
+        pass
+    
+
+def PLUGIN_ENTRY():
+    return magicstrings()
+
+
 def main():
   ch = CSourceFilesChooser(PROGRAM_NAME + ": Source code files")
   if len(ch.items) > 0:
