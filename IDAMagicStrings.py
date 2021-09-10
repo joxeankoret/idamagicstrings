@@ -60,11 +60,11 @@ NOT_FUNCTION_NAMES = ["copyright", "char", "bool", "int", "unsigned", "long",
   "deleting", "removing", "updating", "adding", "assertion", "flags",
   "overflow", "enabled", "disabled", "enable", "disable", "virtual", "client",
   "server", "switch", "while", "offset", "abort", "panic", "static", "updated",
-  "pointer", "reason", "month", "year", "week", "hour", "minute", "second", 
+  "pointer", "reason", "month", "year", "week", "hour", "minute", "second",
   'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
   'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
-  'september', 'october', 'november', 'december', "arguments", "corrupt", 
-  "corrupted", "default", "success", "expecting", "missing", "phrase", 
+  'september', 'october', 'november', 'december', "arguments", "corrupt",
+  "corrupted", "default", "success", "expecting", "missing", "phrase",
   "unrecognized", "undefined",
   ]
 
@@ -268,7 +268,7 @@ class CSourceFilesChooser(CIDAMagicStringsChooser):
     d, s = get_source_strings()
     keys = list(d.keys())
     keys.sort()
-    
+
     i = 0
     for key in keys:
       for ea, name, str_data in d[key]:
@@ -472,7 +472,7 @@ def get_string(ea):
     unicode_tmp = idc.get_strlit_contents(ea, strtype=1)
     if unicode_tmp is not None and len(unicode_tmp) > len(tmp):
       tmp = unicode_tmp
-  
+
   if tmp is None:
     tmp = ""
   elif type(tmp) != str:
@@ -504,8 +504,10 @@ class CClassesTreeViewer(PluginForm):
             parent_name = "::".join(tokens[:tokens.index(node_name)])
             try:
               parent = self.nodes[parent_name]
-            except:
-              print("Error adding node?", self.nodes, parent_name, str(sys.exc_info()[1]))
+            except Exception as e:
+              print(f"[idamagic] Error {e.with_traceback} ea:{ea} parent_name: {parent_name} sys:{str(sys.exc_info()[1])} ")  #, self.nodes, parent_name, str(sys.exc_info()[1]))
+            except KeyError as e:
+              print(f"[idamagic] KeyError {e.with_traceback} ea:{ea} parent_name: {parent_name} sys:{str(sys.exc_info()[1])} ")  #, self.nodes, parent_name, str(sys.exc_info()[1]))
 
           node = QtWidgets.QTreeWidgetItem(parent)
           node.setText(0, full_name)
@@ -592,7 +594,12 @@ class CClassesGraph(idaapi.GraphViewer):
         parent_name = "::".join(tokens[:tokens.index(node_name)])
         if parent_name != "" and parent_name in self.nodes:
           parent_id = self.nodes[parent_name]
-          self.AddEdge(parent_id, node_id)
+          try:
+            self.AddEdge(parent_id, node_id)
+          except AssertionError as e:
+            print(f'[idamagic] onrefresh AssertionError {e} parent:{parent_name} pid:{parent_id} nid:{node_id}')
+          except Exception as e:
+            print(f'[idamagic] onrefresh ERR {e} parent:{parent_name} pid:{parent_id} nid:{node_id}')
           self.graph[parent_id].append(node_id)
 
     return True
@@ -609,10 +616,10 @@ class CClassesGraph(idaapi.GraphViewer):
       for ea in eas:
         func = idaapi.get_func(ea)
         if func is None:
-          s = get_strlit_contents(ea)
+          s = idc.get_strlit_contents(ea)
           s = s.decode("utf-8")
           if s is not None and s.find(str(self[node_id])) == -1:
-            s = get_strlit_contents(ea, strtype=1)
+            s = idc.get_strlit_contents(ea, strtype=1)
           else:
             s = GetDisasm(ea)
         else:
@@ -718,7 +725,7 @@ class CFakeString:
 
   def __repr__(self):
     return self.__str__()
-  
+
 #-------------------------------------------------------------------------------
 def find_function_names(strings_list):
   rarity = {}
@@ -771,7 +778,7 @@ def find_function_names(strings_list):
             if has_nltk:
               if candidate not in FOUND_TOKENS:
                 continue
-              
+
               found = False
               for tkn_type in TOKEN_TYPES:
                 if tkn_type in FOUND_TOKENS[candidate]:
@@ -815,20 +822,20 @@ def show_function_names(strings_list):
     if len(candidates) == 1:
       raw_strings = list(raw_func_strings[key])
       raw_strings = list(map(repr, raw_strings))
-      
+
       func_name = get_func_name(key)
       #print(f'[idamagic] key: {key} f:{func_name}')
       tmp = demangle_name(func_name, INF_SHORT_DN)
       if tmp is not None:
         func_name = tmp
       func_name = func_name.replace('::', '_')
-      print(f'[idamagic] final_list l:{len(final_list)} adding: {func_name} cand: {list(candidates)[0]} rawstr: {raw_strings}')
+      print(f'[idamagic] final_list l:{len(final_list)} adding: {func_name} cand: {list(candidates)[0]} rawstrlen: {len(raw_strings)}')
       final_list.append([key, func_name, list(candidates)[0], raw_strings])
 
   if len(classes) > 0:
     class_graph = CClassesGraph(PROGRAM_NAME + ": Classes Hierarchy", classes, final_list)
     class_graph.Show()
-    
+
     class_tree = CClassesTreeViewer()
     class_tree.Show(PROGRAM_NAME + ": Classes Tree", classes)
 
@@ -860,7 +867,7 @@ class magicstrings(idaapi.plugin_t):
     def term(self):
         #idaapi.msg("StructTyper term() called!\n")
         pass
-    
+
 
 def PLUGIN_ENTRY():
     return magicstrings()
