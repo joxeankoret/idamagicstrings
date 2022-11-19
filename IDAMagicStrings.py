@@ -9,9 +9,12 @@
 #
 #-------------------------------------------------------------------------------
 
-from __future__ import print_function
-
 import os
+import sys
+sys.path.append('c:/apps/ida/')
+sys.path.append('c:/apps/ida/python/3/')
+# sys.path.append('c:/python39/lib/')
+# sys.path.append('c:/python39/lib/site-packages/')
 import re
 
 from collections import Counter
@@ -22,15 +25,20 @@ from idc import *
 from idaapi import *
 from idautils import *
 
-from PyQt5 import QtCore, QtGui, QtWidgets
+try:
+  from PyQt5 import QtCore
+  from PyQt5 import QtGui
+  from PyQt5 import QtWidgets
+except ImportError as e:
+  print(f'{os.path.basename(__file__)} importerror {e}')
 
 try:
   import nltk
   from nltk.tokenize import word_tokenize
   from nltk.tag import pos_tag
-
   has_nltk = True
-except ImportError:
+except ImportError as e:
+  print(f'{os.path.basename(__file__)} importerror nltk {e}')
   has_nltk = False
 
 #-------------------------------------------------------------------------------
@@ -155,8 +163,6 @@ def get_source_strings(min_len = 4, strtypes = [0, 1]):
     print("Programming languages found:\n")
     for key in src_langs:
       print("  %s %f%%" % (key.ljust(10), src_langs[key] * 100. / total_files))
-    print("\n")
-
   return d, strings
 
 #-------------------------------------------------------------------------------
@@ -189,7 +195,11 @@ class CBaseTreeViewer(PluginForm):
     self.parent = idaapi.PluginForm.FormToPyQtWidget(form)
 
     # Create tree control
-    self.tree = QtWidgets.QTreeWidget()
+    try:
+      self.tree = QtWidgets.QTreeWidget()
+    except NameError as e:
+      print(f'[idamagic] nameerror {e}')
+      return
     self.tree.setHeaderLabels(("Names",))
     self.tree.setColumnWidth(0, 100)
 
@@ -315,14 +325,16 @@ class CSourceFilesChooser(CIDAMagicStringsChooser):
       item = self.items[i]
       ea = int(item[3], 16)
       candidate, _ = os.path.splitext(item[2])
+      candidate = candidate
       name = "%s_%08x" % (candidate, ea)
       func = idaapi.get_func(ea)
       if func is not None:
         ea = func.start_ea
         set_name(ea, name, SN_CHECK)
       else:
-        line = "WARNING: Cannot rename 0x%08x to %s because there is no function associated."
-        print(line % (ea, name))
+        print(f'[idamagic] {self.title} cannot rename {ea} {name} snc:{SN_CHECK}' )
+        #line = "WARNING: Cannot rename 0x%08x to %s because there is no function associated."
+        #print(line % (ea, name))
 
   def OnGetLine(self, n):
     return self.items[n]
@@ -404,12 +416,15 @@ class CCandidateFunctionNames(CIDAMagicStringsChooser):
     self.rename_items(l)
 
   def rename_items(self, items):
+    idx = 0
     for i in items:
+      idx +=1
       item = self.items[i]
       ea = int(item[1], 16)
-      candidate = item[3]
+      candidate = item[3].replace(':','')
+      candidate = candidate.replace(' ','_')
       set_name(ea, candidate, SN_CHECK)
-      print(f'[idamagic] rename {item} to {candidate}')
+      print(f'[idamagic] {self.title} i:{idx}/{len(items)} rename {item[2]} addr: {item[1]} to {candidate} snc:{SN_CHECK}')
 
   def OnGetLine(self, n):
     return self.items[n]
@@ -454,9 +469,7 @@ class CCandidateFunctionNames(CIDAMagicStringsChooser):
 #-------------------------------------------------------------------------------
 class CClassXRefsChooser(idaapi.Choose):
   def __init__(self, title, items):
-    idaapi.Choose.__init__(self,
-                     title,
-                     [ ["Address", 8], ["String", 80] ])
+    idaapi.Choose.__init__(self, title, [ ["Address", 8], ["String", 80] ])
     self.items = items
 
   def OnGetLine(self, n):
@@ -605,7 +618,12 @@ class CClassesGraph(idaapi.GraphViewer):
     return True
 
   def OnGetText(self, node_id):
-    return str(self[node_id])
+    ogt = ''
+    try:
+      ogt = str(self[node_id])
+    except KeyError as e:
+      print(f'[idamagic] {self} ogt keyerror {e} nodeid={node_id}')
+    return ogt # str(self[node_id])
 
   def OnDblClick(self, node_id):
     eas = self.nodes_ea[node_id]
@@ -807,9 +825,9 @@ def find_function_names(strings_list):
 
 #-------------------------------------------------------------------------------
 def show_function_names(strings_list):
-  l = find_function_names(strings_list)
-  print(f'[idamagic] l : {type(l)} {len(l)}')
-  func_names, raw_func_strings, rarity, classes = l
+  found_func_names = find_function_names(strings_list)
+  print(f'[idamagic] found_func_names={len(found_func_names)} strings_list={type(strings_list)}')
+  func_names, raw_func_strings, rarity, classes = found_func_names
   # print(f'[idamagic] {func_names}, {raw_func_strings}, {rarity}, {classes}')
   # [print(k) for k in l]
   final_list = []
@@ -818,18 +836,21 @@ def show_function_names(strings_list):
     for candidate in func_names[key]:
       if len(rarity[candidate]) == 1:
         candidates.add(candidate)
-   # print(f'[idamagic] key: {key} cand: {len(candidates)}')
+    if len(candidates) > 1:
+      print(f'[idamagic] key: {key} cand: {len(candidates)}')
+      print(f'[idamagic] candidates={candidates}')
     if len(candidates) == 1:
       raw_strings = list(raw_func_strings[key])
       raw_strings = list(map(repr, raw_strings))
 
       func_name = get_func_name(key)
       #print(f'[idamagic] key: {key} f:{func_name}')
-      tmp = demangle_name(func_name, INF_SHORT_DN)
-      if tmp is not None:
-        func_name = tmp
-      func_name = func_name.replace('::', '_')
-      print(f'[idamagic] final_list l:{len(final_list)} adding: {func_name} cand: {list(candidates)[0]} rawstrlen: {len(raw_strings)}')
+      tmp_func_name = demangle_name(func_name, INF_SHORT_DN)
+      if tmp_func_name is not None:
+        func_name = tmp_func_name
+      # func_name = func_name.replace('::', '_')
+      candidate = candidate.replace('::', '_')
+      print(f'[idamagic] final_list l:{len(final_list)} adding: {func_name} key: {key} candidate: {candidate} {type(candidate)}')
       final_list.append([key, func_name, list(candidates)[0], raw_strings])
 
   if len(classes) > 0:
@@ -849,29 +870,24 @@ def show_function_names(strings_list):
 
 class magicstrings(idaapi.plugin_t):
     flags = idaapi.PLUGIN_UNL
-    comment = "This is a comment"
+    comment = "This is a magicstrings comment"
 
-    help = "This is help"
+    help = "This is magicstrings help"
     wanted_name = "magicstrings"
     wanted_hotkey = ""
 
     def init(self):
-        #idaapi.msg("StructTyper init() called!\n")
         return idaapi.PLUGIN_OK
 
     def run(self, arg):
-        #idaapi.msg("StructTyper run() called with %d!\n" % arg)
         main()
-        #flare.struct_typer.main()
 
     def term(self):
-        #idaapi.msg("StructTyper term() called!\n")
         pass
 
 
 def PLUGIN_ENTRY():
     return magicstrings()
-
 
 def main():
   ch = CSourceFilesChooser(PROGRAM_NAME + ": Source code files")
