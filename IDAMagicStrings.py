@@ -11,10 +11,7 @@
 
 import os
 import sys
-sys.path.append('c:/apps/ida/')
-sys.path.append('c:/apps/ida/python/3/')
-# sys.path.append('c:/python39/lib/')
-# sys.path.append('c:/python39/lib/site-packages/')
+
 import re
 
 from collections import Counter
