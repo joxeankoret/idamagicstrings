@@ -4,7 +4,7 @@
 # also able to rename functions based on the guessed function name & rename
 # functions based on the source code file they belong to.
 #
-# Copyright (c) 2018-2019, Joxean Koret
+# Copyright (c) 2018-2022, Joxean Koret
 # Licensed under the GNU Affero General Public License v3.
 #
 #-------------------------------------------------------------------------------
@@ -867,10 +867,10 @@ def show_function_names(strings_list):
 
 class magicstrings(idaapi.plugin_t):
     flags = idaapi.PLUGIN_UNL
-    comment = "This is a magicstrings comment"
+    comment = "IDA Magic Strings plugin"
 
     help = "This is magicstrings help"
-    wanted_name = "magicstrings"
+    wanted_name = "Magic Strings"
     wanted_hotkey = ""
 
     def init(self):
