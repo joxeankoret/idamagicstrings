@@ -330,8 +330,6 @@ class CSourceFilesChooser(CIDAMagicStringsChooser):
         set_name(ea, name, SN_CHECK)
       else:
         print(f'[idamagic] {self.title} cannot rename {ea} {name} snc:{SN_CHECK}' )
-        #line = "WARNING: Cannot rename 0x%08x to %s because there is no function associated."
-        #print(line % (ea, name))
 
   def OnGetLine(self, n):
     return self.items[n]
@@ -620,7 +618,7 @@ class CClassesGraph(idaapi.GraphViewer):
       ogt = str(self[node_id])
     except KeyError as e:
       print(f'[idamagic] {self} ogt keyerror {e} nodeid={node_id}')
-    return ogt # str(self[node_id])
+    return ogt
 
   def OnDblClick(self, node_id):
     eas = self.nodes_ea[node_id]
@@ -823,31 +821,25 @@ def find_function_names(strings_list):
 #-------------------------------------------------------------------------------
 def show_function_names(strings_list):
   found_func_names = find_function_names(strings_list)
-  print(f'[idamagic] found_func_names={len(found_func_names)} strings_list={type(strings_list)}')
   func_names, raw_func_strings, rarity, classes = found_func_names
-  # print(f'[idamagic] {func_names}, {raw_func_strings}, {rarity}, {classes}')
-  # [print(k) for k in l]
   final_list = []
   for key in func_names:
     candidates = set()
     for candidate in func_names[key]:
       if len(rarity[candidate]) == 1:
         candidates.add(candidate)
-    if len(candidates) > 1:
-      print(f'[idamagic] key: {key} cand: {len(candidates)}')
-      print(f'[idamagic] candidates={candidates}')
+
     if len(candidates) == 1:
       raw_strings = list(raw_func_strings[key])
       raw_strings = list(map(repr, raw_strings))
 
       func_name = get_func_name(key)
-      #print(f'[idamagic] key: {key} f:{func_name}')
+
       tmp_func_name = demangle_name(func_name, INF_SHORT_DN)
       if tmp_func_name is not None:
         func_name = tmp_func_name
-      # func_name = func_name.replace('::', '_')
+
       candidate = candidate.replace('::', '_')
-      print(f'[idamagic] final_list l:{len(final_list)} adding: {func_name} key: {key} candidate: {candidate} {type(candidate)}')
       final_list.append([key, func_name, list(candidates)[0], raw_strings])
 
   if len(classes) > 0:
