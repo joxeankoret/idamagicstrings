@@ -26,4 +26,4 @@ Here are some basic screenshots of this IDA Python script functionality:
 
 ## License
 
-The plugin is licensed under the GNU GPL v3 license.
+The plugin is licensed under the AGPL-3.0 license.
