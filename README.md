@@ -1,4 +1,4 @@
-# IDAMagicStrings
+# IDA Magic Strings
 
 An __[IDA](https://www.hex-rays.com) Python plugin__ to extract information from string constants. The current version of the plugin is able to:
 
