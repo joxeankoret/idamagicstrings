@@ -53,6 +53,8 @@ ACTION_NAME     = "IDAMagicStrings:run"
 MENU_PATH       = "View/Open subviews/IDA Magic Strings"
 WANTED_SHORTCUT = "Ctrl-Shift-D"
 
+VERSION = "1.2"
+
 #-------------------------------------------------------------------------------
 SOURCE_FILES_REGEXP = r"([a-z_\/\\][a-z0-9_/\\:\-\.@]+\.(c|cc|cxx|c\+\+|cpp|h|hpp|m|rs|go|ml))($|:| )"
 
@@ -134,41 +136,46 @@ def add_source_file_to(d, src_langs, refs, full_path, s):
     return d, src_langs
 
 #-------------------------------------------------------------------------------
+def find_source_files_in_strings(strings, min_len, d, src_langs):
+    total_files = 0
+    for s in strings:
+        if not s or s.length <= min_len:
+            continue
+        ret = re.findall(SOURCE_FILES_REGEXP, str(s), re.IGNORECASE)
+        if not ret:
+            continue
+        refs = list(idautils.DataRefsTo(s.ea))
+        if refs:
+            total_files += 1
+            d, src_langs = add_source_file_to(d, src_langs, refs, ret[0][0], s)
+    return total_files
+
+#-------------------------------------------------------------------------------
+def find_source_files_in_debug_info(d, src_langs):
+    total_files = 0
+    for f in idautils.Functions():
+        func = ida_funcs.get_func(f)
+        if func is None:
+            continue
+        for block in ida_gdl.FlowChart(func):
+            for head in idautils.Heads(block.start_ea, block.end_ea):
+                full_path = ida_lines.get_sourcefile(head)
+                if full_path is not None:
+                    total_files += 1
+                    d, src_langs = add_source_file_to(d, src_langs, [head], full_path, "Symbol: %s" % full_path)
+    return total_files
+
+#-------------------------------------------------------------------------------
 def get_source_strings(min_len = 4, strtypes = [0, 1]):
     strings = get_strings(strtypes)
 
-    # Search string references to source files
     src_langs = Counter()
-    total_files = 0
     d = {}
-    for s in strings:
-        if s and s.length > min_len:
-            ret = re.findall(SOURCE_FILES_REGEXP, str(s), re.IGNORECASE)
-            if ret and len(ret) > 0:
-                refs = list(idautils.DataRefsTo(s.ea))
-                if len(refs) > 0:
-                    total_files += 1
-                    full_path        = ret[0][0]
-                    d, src_langs = add_source_file_to(d, src_langs, refs, full_path, s)
-
-    # Use the loaded debugging information (if any) to find source files
-    for f in list(idautils.Functions()):
-        done = False
-        func = ida_funcs.get_func(f)
-        if func is not None:
-            cfg = ida_gdl.FlowChart(func)
-            for block in cfg:
-                if done:
-                    break
-
-                for head in list(idautils.Heads(block.start_ea, block.end_ea)):
-                    full_path = ida_lines.get_sourcefile(head)
-                    if full_path is not None:
-                        total_files += 1
-                        d, src_langs = add_source_file_to(d, src_langs, [head], full_path, "Symbol: %s" % full_path)
+    total_files = find_source_files_in_strings(strings, min_len, d, src_langs)
+    total_files += find_source_files_in_debug_info(d, src_langs)
 
     nltk_preprocess(strings)
-    if len(d) > 0 and total_files > 0:
+    if d and total_files > 0:
         print("Programming languages found:\n")
         for key in src_langs:
             print("    %s %f%%" % (key.ljust(10), src_langs[key] * 100. / total_files))
@@ -301,9 +308,9 @@ class CSourceFilesChooser(CIDAMagicStringsChooser):
         if ret < 0:
             return False
 
-        self.cmd_all                    = self.AddCommand("Rename all to filename_EA")
-        self.cmd_all_sub            = self.AddCommand("Rename all sub_* to filename_EA")
-        self.cmd_selected         = self.AddCommand("Rename selected to filename_EA")
+        self.cmd_all = self.AddCommand("Rename all to filename_EA")
+        self.cmd_all_sub = self.AddCommand("Rename all sub_* to filename_EA")
+        self.cmd_selected = self.AddCommand("Rename selected to filename_EA")
         self.cmd_selected_sub = self.AddCommand("Rename selected sub_* to filename_EA")
         return self.d
 
@@ -393,10 +400,10 @@ class CCandidateFunctionNames(CIDAMagicStringsChooser):
         if ret < 0:
             return False
 
-        self.cmd_rename_all            = self.AddCommand("Rename all functions")
-        self.cmd_rename_sub            = self.AddCommand("Rename all sub_* functions")
+        self.cmd_rename_all = self.AddCommand("Rename all functions")
+        self.cmd_rename_sub = self.AddCommand("Rename all sub_* functions")
         self.cmd_rename_selected = self.AddCommand("Rename selected function(s)")
-        self.cmd_rename_sub_sel    = self.AddCommand("Rename selected sub_* function(s)")
+        self.cmd_rename_sub_sel = self.AddCommand("Rename selected sub_* function(s)")
 
     def OnCommand(self, n, cmd_id):
         # Aditional right-click-menu commands handles
@@ -561,33 +568,34 @@ class CClassesGraph(ida_graph.GraphViewer):
         self.nodes = {}
         self.nodes_ea = {}
         self.graph = {}
-
         self.last_cmd = 0
+        self.build_final_list()
 
+    def build_final_list(self):
         dones = set()
         for ea, tokens in self.classes:
-            refs = idautils.DataRefsTo(ea)
             refs_funcs = set()
-            for ref in refs:
+            for ref in idautils.DataRefsTo(ea):
                 func = ida_funcs.get_func(ref)
                 if func is not None:
                     refs_funcs.add(func.start_ea)
 
-            if len(refs_funcs) == 1:
-                func_ea = list(refs_funcs)[0]
-                if func_ea in dones:
-                    continue
-                dones.add(func_ea)
+            if len(refs_funcs) != 1:
+                continue
 
-                func_name = idc.get_func_name(func_ea)
-                tmp = idc.demangle_name(func_name, ida_ida.inf_get_short_demnames())
-                if tmp is not None:
-                    func_name = tmp
+            func_ea = list(refs_funcs)[0]
+            if func_ea in dones:
+                continue
+            dones.add(func_ea)
 
-                element = [func_ea, func_name, "::".join(tokens), [get_string(ea)]]
-                self.final_list.append(element)
+            func_name = idc.get_func_name(func_ea)
+            tmp = idc.demangle_name(func_name, ida_ida.inf_get_short_demnames())
+            if tmp is not None:
+                func_name = tmp
 
-    def OnRefresh(self):
+            self.final_list.append([func_ea, func_name, "::".join(tokens), [get_string(ea)]])
+
+    def build_graph(self):
         self.Clear()
         self.graph = {}
         for ea, tokens in self.classes:
@@ -600,17 +608,16 @@ class CClassesGraph(ida_graph.GraphViewer):
                 else:
                     node_id = self.nodes[full_name]
 
-                try:
-                    self.nodes_ea[node_id].add(ea)
-                except KeyError:
-                    self.nodes_ea[node_id] = set([ea])
+                self.nodes_ea.setdefault(node_id, set()).add(ea)
 
                 parent_name = "::".join(tokens[:tokens.index(node_name)])
-                if parent_name != "" and parent_name in self.nodes:
+                if parent_name and parent_name in self.nodes:
                     parent_id = self.nodes[parent_name]
                     self.AddEdge(parent_id, node_id)
                     self.graph[parent_id].append(node_id)
 
+    def OnRefresh(self):
+        self.build_graph()
         return True
 
     def OnGetText(self, node_id):
@@ -641,53 +648,59 @@ class CClassesGraph(ida_graph.GraphViewer):
             if idx > -1:
                 ida_kernwin.jumpto(list(eas)[idx])
 
+    def export_to_dot(self):
+        fname = ida_kernwin.ask_file(1, "*.dot", "Dot file name")
+        if not fname:
+            return
+
+        buf = 'digraph G {\n graph [overlap=scale]; node [fontname=Courier]; \n\n'
+        for n in self.graph:
+            name = str(self[n])
+            buf += ' a%s [shape=box, label = "%s", color="blue"]\n' % (n, name)
+        buf += '\n'
+
+        dones = set()
+        for node_id in self.graph:
+            for child_id in self.graph[node_id]:
+                s = str([node_id, child_id])
+                if s in dones:
+                    continue
+                dones.add(s)
+                buf += " a%s -> a%s [style = bold]\n" % (node_id, child_id)
+
+        buf += '\n}'
+        with open(fname, "w") as f:
+            f.write(buf)
+
+    def export_to_gml(self):
+        fname = ida_kernwin.ask_file(1, "*.gml", "GML file name")
+        if not fname:
+            return
+
+        buf = 'graph [ \n'
+        for n in self.graph:
+            name = str(self[n])
+            buf += 'node [ id %s \n label "%s"\n fill "blue" \n type "oval"\n LabelGraphics [ type "text" ] ] \n' % (n, name)
+        buf += '\n'
+
+        dones = set()
+        for node_id in self.graph:
+            for child_id in self.graph[node_id]:
+                s = str([node_id, child_id])
+                if s in dones:
+                    continue
+                dones.add(s)
+                buf += " edge [ source %s \n target %s ]\n" % (node_id, child_id)
+
+        buf += '\n]'
+        with open(fname, "w") as f:
+            f.write(buf)
+
     def OnCommand(self, cmd_id):
         if self.cmd_dot == cmd_id:
-            fname = ida_kernwin.ask_file(1, "*.dot", "Dot file name")
-            if fname:
-                f = open(fname, "w")
-                buf = 'digraph G {\n graph [overlap=scale]; node [fontname=Courier]; \n\n'
-                for n in self.graph:
-                    name = str(self[n])
-                    buf += ' a%s [shape=box, label = "%s", color="blue"]\n' % (n, name)
-                buf += '\n'
-
-                dones = set()
-                for node_id in self.graph:
-                    for child_id in self.graph[node_id]:
-                        s = str([node_id, child_id])
-                        if s in dones:
-                            continue
-                        dones.add(s)
-                        buf += " a%s -> a%s [style = bold]\n" % (node_id, child_id)
-
-                buf += '\n'
-                buf += '}'
-                f.write(buf)
-                f.close()
+            self.export_to_dot()
         elif self.cmd_gml == cmd_id:
-            fname = ida_kernwin.ask_file(1, "*.gml", "GML file name")
-            if fname:
-                f = open(fname, "w")
-                buf = 'graph [ \n'
-                for n in self.graph:
-                    name = str(self[n])
-                    buf += 'node [ id %s \n label "%s"\n fill "blue" \n type "oval"\n LabelGraphics [ type "text" ] ] \n' % (n, name)
-                buf += '\n'
-
-                dones = set()
-                for node_id in self.graph:
-                    for child_id in self.graph[node_id]:
-                        s = str([node_id, child_id])
-                        if s in dones:
-                            continue
-                        dones.add(s)
-                        buf += " edge [ source %s \n target %s ]\n" % (node_id, child_id)
-
-                buf += '\n'
-                buf += ']'
-                f.write(buf)
-                f.close()
+            self.export_to_gml()
 
     def OnPopup(self, form, popup_handle):
         self.cmd_dot = 0
@@ -736,13 +749,8 @@ class CFakeString:
         return self.__str__()
 
 #-------------------------------------------------------------------------------
-def find_function_names(strings_list):
-    rarity = {}
-    func_names = {}
-    raw_func_strings = {}
-    class_objects = []
-
-    class_tmp_names = []
+def collect_class_names_from_symbols():
+    class_names = []
     for ea, name in idautils.Names():
         func = ida_funcs.get_func(ea)
         if func is None:
@@ -750,67 +758,69 @@ def find_function_names(strings_list):
 
         true_name = name
         if name.find("::") == -1:
-            name = idc.demangle_name(name, ida_ida.inf_get_short_demnames())
-            if name is not None and name != "" and name.find("::") > -1:
-                true_name = name
+            demangled = idc.demangle_name(name, ida_ida.inf_get_short_demnames())
+            if demangled and demangled.find("::") > -1:
+                true_name = demangled
 
         if true_name.find("::") > -1:
-            s = CFakeString(ea, true_name)
-            class_tmp_names.append(s)
+            class_names.append(CFakeString(ea, true_name))
 
-    class_tmp_names.extend(strings_list)
-    for s in class_tmp_names:
-        # Find class members
-        class_ret = re.findall(CLASS_NAMES_REGEXP, str(s), re.IGNORECASE)
-        if len(class_ret) > 0:
-            for element in class_ret:
-                candidate = element[0]
-                if candidate.find("::") > 0:
-                    tokens = candidate.split("::")
-                    if tokens not in class_objects:
-                        class_objects.append([s.ea, tokens])
+    return class_names
 
-        # Find just function names
+#-------------------------------------------------------------------------------
+def find_class_objects(strings):
+    class_objects = []
+    for s in strings:
+        for match in re.findall(CLASS_NAMES_REGEXP, str(s), re.IGNORECASE):
+            candidate = match[0]
+            if candidate.find("::") > 0:
+                tokens = candidate.split("::")
+                if tokens not in class_objects:
+                    class_objects.append([s.ea, tokens])
+    return class_objects
+
+#-------------------------------------------------------------------------------
+def is_valid_nltk_token(candidate):
+    if not has_nltk:
+        return True
+    if candidate not in FOUND_TOKENS:
+        return False
+    return any(tkn_type in FOUND_TOKENS[candidate] for tkn_type in TOKEN_TYPES)
+
+#-------------------------------------------------------------------------------
+def collect_function_name_refs(strings):
+    rarity = {}
+    func_names = {}
+    raw_func_strings = {}
+
+    for s in strings:
         ret = re.findall(FUNCTION_NAMES_REGEXP, str(s), re.IGNORECASE)
-        if len(ret) > 0:
-            candidate = ret[0][0]
-            if seems_function_name(candidate):
-                ea = s.ea
-                refs = idautils.DataRefsTo(ea)
-                found = False
-                for ref in refs:
-                    func = ida_funcs.get_func(ref)
-                    if func is not None:
-                        found = True
-                        key = func.start_ea
+        if not ret:
+            continue
 
-                        if has_nltk:
-                            if candidate not in FOUND_TOKENS:
-                                continue
+        candidate = ret[0][0]
+        if not seems_function_name(candidate) or not is_valid_nltk_token(candidate):
+            continue
 
-                            found = False
-                            for tkn_type in TOKEN_TYPES:
-                                if tkn_type in FOUND_TOKENS[candidate]:
-                                    found = True
-                                    break
+        for ref in idautils.DataRefsTo(s.ea):
+            func = ida_funcs.get_func(ref)
+            if func is None:
+                continue
 
-                            if not found:
-                                continue
+            key = func.start_ea
+            rarity.setdefault(candidate, set()).add(key)
+            func_names.setdefault(key, set()).add(candidate)
+            raw_func_strings.setdefault(key, set()).add(str(s))
 
-                        try:
-                            rarity[candidate].add(key)
-                        except KeyError:
-                            rarity[candidate] = set([key])
+    return func_names, raw_func_strings, rarity
 
-                        try:
-                            func_names[key].add(candidate)
-                        except KeyError:
-                            func_names[key] = set([candidate])
+#-------------------------------------------------------------------------------
+def find_function_names(strings_list):
+    all_strings = collect_class_names_from_symbols()
+    all_strings.extend(strings_list)
 
-                        try:
-                            raw_func_strings[key].add(str(s))
-                        except:
-                            raw_func_strings[key] = set([str(s)])
+    class_objects = find_class_objects(all_strings)
+    func_names, raw_func_strings, rarity = collect_function_name_refs(all_strings)
 
     return func_names, raw_func_strings, rarity, class_objects
 

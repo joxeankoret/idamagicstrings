@@ -2,15 +2,15 @@
   "IDAMetadataDescriptorVersion": 1,
   "plugin": {
     "name": "ida-magic-strings",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "entryPoint": "IDAMagicStrings.py",
-    "categories": ["reverse-engineering"],
+    "categories": ["other"],
     "idaVersions": ["9.0", "9.1", "9.2", "9.3", "9.4"],
     "description" : "Extract source files, function names and class names from debugging strings",
     "keywords": ["strings", "source-recovery", "debugging", "reverse-engineering"],
     "license": "GPL-3.0",
     "urls": {
-      "repository": "https://github.com/joxeankoret/ida-magic-strings"
+      "repository": "https://github.com/joxeankoret/idamagicstrings"
     },
     "authors": [{
       "name": "Joxean Koret",
