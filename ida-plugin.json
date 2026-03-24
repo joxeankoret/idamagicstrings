@@ -1,7 +1,7 @@
 {
   "IDAMetadataDescriptorVersion": 1,
   "plugin": {
-    "name": "ida-magic-strings",
+    "name": "idamagicstrings",
     "version": "1.2.0",
     "entryPoint": "IDAMagicStrings.py",
     "categories": ["other"],
